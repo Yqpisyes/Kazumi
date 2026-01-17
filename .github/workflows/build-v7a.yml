@@ -1,0 +1,36 @@
+name: Build ARM v7a APK
+
+on:
+  workflow_dispatch: # 允许手动点击按钮开始编译
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17' # Flutter 编译 Android 通常需要 Java 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable' # 使用最新的稳定版 Flutter
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build v7a APK
+        run: flutter build apk --target-platform android-arm --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kazumi-ARM-v7a
+          path: build/app/outputs/flutter-apk/app-release.apk
