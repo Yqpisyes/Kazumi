@@ -43,6 +43,8 @@ class PlayerItem extends StatefulWidget {
     required this.onBackPressed,
     required this.keyboardFocus,
     required this.sendDanmaku,
+    required this.showDanmakuDestinationPickerAndSend,
+    required this.pauseForTimedShutdown,
     this.disableAnimations = false,
   });
 
@@ -54,6 +56,8 @@ class PlayerItem extends StatefulWidget {
   final void Function(String) sendDanmaku;
   final FocusNode keyboardFocus;
   final bool disableAnimations;
+  final void Function(String) showDanmakuDestinationPickerAndSend;
+  final VoidCallback pauseForTimedShutdown;
 
   @override
   State<PlayerItem> createState() => _PlayerItemState();
@@ -690,10 +694,13 @@ class _PlayerItemState extends State<PlayerItem>
       // 历史记录相关
       if (playerController.playerPlaying && !videoPageController.loading) {
         if (!WebDav().isHistorySyncing) {
+          final pluginName = videoPageController.isOfflineMode
+              ? videoPageController.offlinePluginName
+              : videoPageController.currentPlugin.name;
           historyController.updateHistory(
-              videoPageController.currentEpisode,
+              videoPageController.actualEpisodeNumber,
               videoPageController.currentRoad,
-              videoPageController.currentPlugin.name,
+              pluginName,
               videoPageController.bangumiItem,
               playerController.playerPosition,
               videoPageController.src,
@@ -1049,6 +1056,7 @@ class _PlayerItemState extends State<PlayerItem>
                     decoration: InputDecoration(
                       border: OutlineInputBorder(),
                     ),
+                    isExpanded: true,
                     value: selectedSyncPlayEndPoint,
                     items: syncPlayEndPoints.map((String value) {
                       return DropdownMenuItem<String>(
@@ -1059,6 +1067,14 @@ class _PlayerItemState extends State<PlayerItem>
                         ),
                       );
                     }).toList(),
+                    selectedItemBuilder: (context) {
+                      return syncPlayEndPoints.map((String value) {
+                        return Text(
+                          value,
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      }).toList();
+                    },
                     onChanged: (String? newValue) {
                       if (newValue != null) {
                         if (newValue == defaultCustomSyncPlayEndPoint) {
@@ -1502,6 +1518,8 @@ class _PlayerItemState extends State<PlayerItem>
                                 showSyncPlayRoomCreateDialog,
                             showSyncPlayEndPointSwitchDialog:
                                 showSyncPlayEndPointSwitchDialog,
+                            showDanmakuDestinationPickerAndSend: widget.showDanmakuDestinationPickerAndSend,
+                            pauseForTimedShutdown: widget.pauseForTimedShutdown,
                             disableAnimations: widget.disableAnimations,
                             handleScreenShot: handleScreenshot,
                             skipOP: skipOP,
@@ -1527,6 +1545,7 @@ class _PlayerItemState extends State<PlayerItem>
                                 showSyncPlayRoomCreateDialog,
                             showSyncPlayEndPointSwitchDialog:
                                 showSyncPlayEndPointSwitchDialog,
+                            pauseForTimedShutdown: widget.pauseForTimedShutdown,
                             disableAnimations: widget.disableAnimations,
                             skipOP: skipOP,
                           ),
