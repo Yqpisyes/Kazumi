@@ -12,7 +12,6 @@ import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:kazumi/bean/widget/collect_button.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:kazumi/modules/collect/collect_sync_plan.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -30,7 +29,6 @@ class _CollectPageState extends State<CollectPage>
   TabController? tabController;
   bool showDelete = false;
   bool syncCollectiblesing = false;
-  Box setting = GStorage.setting;
 
   Future<bool> _syncBangumiWithProgress({
     required GlobalKey<_FullSyncProgressDialogState> progressDialogKey,
@@ -206,12 +204,12 @@ class _CollectPageState extends State<CollectPage>
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
-            bool webDavenable = await setting.get(SettingBoxKey.webDavEnable,
-                defaultValue: false);
-            bool webDavCollectEnable = await setting
-                .get(SettingBoxKey.webDavEnableCollect, defaultValue: false);
-            bool bgmSyncEnable = await setting
-                .get(SettingBoxKey.bangumiSyncEnable, defaultValue: false);
+            bool webDavenable =
+                await GStorage.getSetting(SettingsKeys.webDavEnable);
+            bool webDavCollectEnable =
+                GStorage.getSetting(SettingsKeys.webDavEnableCollect);
+            bool bgmSyncEnable =
+                GStorage.getSetting(SettingsKeys.bangumiSyncEnable);
             final syncPlan = CollectSyncPlan(
               webDavEnabled: webDavenable,
               webDavCollectiblesEnabled: webDavCollectEnable,
@@ -269,6 +267,8 @@ class _CollectPageState extends State<CollectPage>
   }
 
   List<Widget> contentGrid(List<CollectedBangumi> collectedBangumiList) {
+    final bool showAnimeCounter =
+        GStorage.getSetting(SettingsKeys.showAnimeCounter);
     List<Widget> gridViewList = [];
     List<List<CollectedBangumi>> collectedBangumiRenderItemList =
         List.generate(tabs.length, (_) => <CollectedBangumi>[]);
@@ -347,6 +347,25 @@ class _CollectPageState extends State<CollectPage>
                 ),
               ),
             ),
+            if (collectedBangumiRenderItem.isNotEmpty && showAnimeCounter)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 12),
+                      child: Text(
+                        '总计：${collectedBangumiRenderItem.length}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       );

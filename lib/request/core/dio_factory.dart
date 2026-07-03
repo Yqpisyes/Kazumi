@@ -97,8 +97,8 @@ class _BangumiMirrorInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final enableBangumiProxy = GStorage.setting
-        .get(SettingBoxKey.enableBangumiProxy, defaultValue: false);
+    final enableBangumiProxy =
+        GStorage.getSetting(SettingsKeys.enableBangumiProxy);
     if (!enableBangumiProxy) {
       handler.next(options);
       return;
@@ -130,8 +130,7 @@ class _GithubMirrorInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final enableGitProxy =
-        GStorage.setting.get(SettingBoxKey.enableGitProxy, defaultValue: false);
+    final enableGitProxy = GStorage.getSetting(SettingsKeys.enableGitProxy);
     if (!enableGitProxy) {
       handler.next(options);
       return;

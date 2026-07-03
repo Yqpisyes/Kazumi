@@ -4,9 +4,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/player/controller/player_debug_controller.dart';
+import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
 import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
@@ -27,14 +27,12 @@ class PlayerPlaybackController = _PlayerPlaybackController
 
 abstract class _PlayerPlaybackController with Store {
   _PlayerPlaybackController({
-    required this.setting,
     required this.shaderAssetService,
     required this.debug,
     required this.videoUrl,
     required this.onExitSyncPlayRoom,
   });
 
-  final Box setting;
   final ShaderAssetService shaderAssetService;
   final PlayerDebugController debug;
   final String Function() videoUrl;
@@ -54,12 +52,9 @@ abstract class _PlayerPlaybackController with Store {
   int buttonSkipTime = 80;
   int arrowKeySkipTime = 10;
 
-  /// 视频超分
-  /// 1. OFF
-  /// 2. Anime4K Efficiency
-  /// 3. Anime4K Quality
+  /// 当前超分辨率模式
   @observable
-  int superResolutionType = 1;
+  SuperResolutionMode superResolutionMode = SuperResolutionMode.off;
 
   @observable
   double volume = -1;
@@ -168,18 +163,16 @@ abstract class _PlayerPlaybackController with Store {
   Future<Player?> createVideoController(
       Map<String, String> httpHeaders, bool adBlockerEnabled,
       {int offset = 0}) async {
-    superResolutionType =
-        setting.get(SettingBoxKey.defaultSuperResolutionType, defaultValue: 1);
-    hAenable = setting.get(SettingBoxKey.hAenable, defaultValue: true);
+    superResolutionMode = SuperResolutionMode.fromStorageValue(
+      GStorage.getSetting(SettingsKeys.defaultSuperResolutionMode),
+    );
+    hAenable = GStorage.getSetting(SettingsKeys.hAenable);
     androidEnableOpenSLES =
-        setting.get(SettingBoxKey.androidEnableOpenSLES, defaultValue: true);
-    hardwareDecoder =
-        setting.get(SettingBoxKey.hardwareDecoder, defaultValue: 'auto-safe');
-    autoPlay = setting.get(SettingBoxKey.autoPlay, defaultValue: true);
-    lowMemoryMode =
-        setting.get(SettingBoxKey.lowMemoryMode, defaultValue: false);
-    playerDebugMode =
-        setting.get(SettingBoxKey.playerDebugMode, defaultValue: false);
+        GStorage.getSetting(SettingsKeys.androidEnableOpenSLES);
+    hardwareDecoder = GStorage.getSetting(SettingsKeys.hardwareDecoder);
+    autoPlay = GStorage.getSetting(SettingsKeys.autoPlay);
+    lowMemoryMode = GStorage.getSetting(SettingsKeys.lowMemoryMode);
+    playerDebugMode = GStorage.getSetting(SettingsKeys.playerDebugMode);
 
     final Player player = Player(
       configuration: PlayerConfiguration(
@@ -228,11 +221,9 @@ abstract class _PlayerPlaybackController with Store {
       }
     }
 
-    final bool proxyEnable =
-        setting.get(SettingBoxKey.proxyEnable, defaultValue: false);
+    final bool proxyEnable = GStorage.getSetting(SettingsKeys.proxyEnable);
     if (proxyEnable) {
-      final String proxyUrl =
-          setting.get(SettingBoxKey.proxyUrl, defaultValue: '');
+      final String proxyUrl = GStorage.getSetting(SettingsKeys.proxyUrl);
       final formattedProxy = ProxyUtils.getFormattedProxyUrl(proxyUrl);
       if (formattedProxy != null) {
         await pp.setProperty("http-proxy", formattedProxy);
@@ -253,7 +244,7 @@ abstract class _PlayerPlaybackController with Store {
     String? videoRenderer;
     if (Platform.isAndroid) {
       final String androidVideoRenderer =
-          setting.get(SettingBoxKey.androidVideoRenderer, defaultValue: 'auto');
+          GStorage.getSetting(SettingsKeys.androidVideoRenderer);
 
       if (androidVideoRenderer == 'auto') {
         // Android 14 及以上使用基于 Vulkan 的 MPV GPU-NEXT 视频输出，着色器性能更好
@@ -277,7 +268,7 @@ abstract class _PlayerPlaybackController with Store {
     if (videoRenderer == 'mediacodec_embed') {
       hAenable = true;
       hardwareDecoder = 'mediacodec';
-      superResolutionType = 1;
+      superResolutionMode = SuperResolutionMode.off;
     }
 
     videoController ??= VideoController(
@@ -285,6 +276,7 @@ abstract class _PlayerPlaybackController with Store {
       configuration: VideoControllerConfiguration(
         vo: videoRenderer,
         enableHardwareAcceleration: hAenable,
+        enableAndroidSurfaceProducer: false,
         hwdec: hAenable ? hardwareDecoder : 'no',
         androidAttachSurfaceAfterVideoParameters: false,
       ),
@@ -294,8 +286,7 @@ abstract class _PlayerPlaybackController with Store {
       return await _discardIfNotCurrent(player);
     }
 
-    bool showPlayerError =
-        setting.get(SettingBoxKey.showPlayerError, defaultValue: true);
+    bool showPlayerError = GStorage.getSetting(SettingsKeys.showPlayerError);
     player.stream.error.listen((event) {
       if (showPlayerError) {
         if (!isCurrentPlayer(player)) {
@@ -315,8 +306,8 @@ abstract class _PlayerPlaybackController with Store {
           error: event);
     });
 
-    if (superResolutionType != 1) {
-      await setShader(superResolutionType, player: player);
+    if (superResolutionMode != SuperResolutionMode.off) {
+      await setShader(superResolutionMode, player: player);
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(player);
       }
@@ -334,8 +325,7 @@ abstract class _PlayerPlaybackController with Store {
     return player;
   }
 
-  Future<void> setShader(int type,
-      {bool synchronized = true, Player? player}) async {
+  Future<void> setShader(SuperResolutionMode mode, {Player? player}) async {
     final currentPlayer = player ?? mediaPlayer;
     if (currentPlayer == null) return;
     try {
@@ -345,30 +335,34 @@ abstract class _PlayerPlaybackController with Store {
       if (!identical(mediaPlayer, currentPlayer)) {
         return;
       }
-      if (type == 2) {
-        await pp.command([
-          'change-list',
-          'glsl-shaders',
-          'set',
-          buildShadersAbsolutePath(
-              shaderAssetService.shadersDirectory.path, mpvAnime4KShadersLite),
-        ]);
-        superResolutionType = 2;
-        return;
+      switch (mode) {
+        case SuperResolutionMode.efficiency:
+          await pp.command([
+            'change-list',
+            'glsl-shaders',
+            'set',
+            buildShadersAbsolutePath(
+              shaderAssetService.shadersDirectory.path,
+              mpvAnime4KShadersLite,
+            ),
+          ]);
+          break;
+        case SuperResolutionMode.quality:
+          await pp.command([
+            'change-list',
+            'glsl-shaders',
+            'set',
+            buildShadersAbsolutePath(
+              shaderAssetService.shadersDirectory.path,
+              mpvAnime4KShaders,
+            ),
+          ]);
+          break;
+        case SuperResolutionMode.off:
+          await pp.command(['change-list', 'glsl-shaders', 'clr', '']);
+          break;
       }
-      if (type == 3) {
-        await pp.command([
-          'change-list',
-          'glsl-shaders',
-          'set',
-          buildShadersAbsolutePath(
-              shaderAssetService.shadersDirectory.path, mpvAnime4KShaders),
-        ]);
-        superResolutionType = 3;
-        return;
-      }
-      await pp.command(['change-list', 'glsl-shaders', 'clr', '']);
-      superResolutionType = 1;
+      superResolutionMode = mode;
     } catch (e) {
       KazumiLogger().w('PlayerController: failed to set shader', error: e);
     }
